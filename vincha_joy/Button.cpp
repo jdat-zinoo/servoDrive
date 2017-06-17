@@ -71,11 +71,14 @@ bool Button::isPressed(void){
 || Return true if the button has been pressed
 */
 bool Button::wasPressed(void){
+  return bitRead(state,CURRENT);
+/*    
     if (bitRead(state,CURRENT)){
         return true;
     } else {
         return false;
     }
+*/
 }
 
 /*
@@ -83,6 +86,13 @@ bool Button::wasPressed(void){
 */
 bool Button::stateChanged(void){
     return bitRead(state,CHANGED);
+/*
+    if (bitRead(state,CHANGED)){
+        return true;
+    } else {
+        return false;
+    }    
+*/
 }
 
 /*
