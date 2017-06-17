@@ -11,7 +11,8 @@
 #define faultLow 6
 #define faultHi 1015
 
-#define serialTimeout 50
+#define serialTimeout 10
+#define parseErrorTreshold 5
 
 #define servoFaultLed 5
 #define servoReadyLed 4
@@ -33,6 +34,11 @@
 
 #include "Button.h"
 
+//#ifdef debug
+//#include <SoftwareSerial.h>
+//SoftwareSerial mySerial(6, 7); // RX, TX
+//#endif
+
 Button calibrateButton = Button(calibratePin, PULLUP);
 Button faultResetButton = Button(resetFaultPin, PULLUP);
 Button driveButton = Button(driveButtonPin, PULLUP);
@@ -48,6 +54,7 @@ int fault;
 int out = 0;
 int indata;
 bool doCalibrate = true;
+bool lockCalibrate = true;
 
 void calibratePot() {
   pot = analogRead(potPin);
@@ -70,6 +77,7 @@ void calibratePot() {
     // calibrate complete
     calMid = pot;
     doCalibrate = false;
+    lockCalibrate = false;
   }
   if (calibrateButton.isPressed()) {
     //calibrate while calibrate button is pressed
@@ -83,52 +91,81 @@ void calibratePot() {
   parseSerial();
 }
 
+uint16_t countParseError;
+static bool parserState=false;
+
 void parseSerial(){
-  static bool rxLedState;
-  indata=abs(Serial.parseInt());
-  if (bitRead(indata,0)){
-    digitalWrite(servoReadyLed,HIGH);
-  } else {
-    digitalWrite(servoReadyLed,LOW);
-  }
   
-  if (bitRead(indata,1)){
-    digitalWrite(servoFaultLed,HIGH);
-  } else {
-    digitalWrite(servoFaultLed,LOW);
-  }
+  indata=abs(Serial.parseInt());
   
   if (indata==0){
-    digitalWrite(rxDataLed,HIGH);
+    countParseError++;
   } else {
+    parserState=true;
+    countParseError=0;
     digitalWrite(rxDataLed,LOW);
   }
+
+  if (countParseError>parseErrorTreshold) {
+    parserState=false;
+    digitalWrite(rxDataLed,HIGH);
+  } else {
+    parserState=true;
+    digitalWrite(rxDataLed,LOW);
+  }
+
+  if (parserState && (countParseError==0)){    
+    if (bitRead(indata,0)){
+      digitalWrite(servoReadyLed,HIGH);
+    } else {
+      digitalWrite(servoReadyLed,LOW);
+    }
+    
+    if (bitRead(indata,1)){
+      digitalWrite(servoFaultLed,HIGH);
+    } else {
+      digitalWrite(servoFaultLed,LOW);
+    }
+  }
+  if (!parserState) {
+    digitalWrite(servoReadyLed,LOW);
+    digitalWrite(servoFaultLed,LOW);
+  }
+//  if (bitRead(indata,0) && parserState){
+//    digitalWrite(servoReadyLed,HIGH);
+//  } else {
+//    digitalWrite(servoReadyLed,LOW);
+//  }
+//  
+//  if (bitRead(indata,1) && parserState){
+//    digitalWrite(servoFaultLed,HIGH);
+//  } else {
+//    digitalWrite(servoFaultLed,LOW);
+//  }
+  
+//  if (bitRead(indata,3) && parserState){
+//    digitalWrite(rxDataLed,LOW);
+//  } else {
+//    digitalWrite(rxDataLed,HIGH);
+//  }
   
 }
 void setup() {
-  Serial.begin(9600);
+  Serial.begin(38400);
   Serial.setTimeout(serialTimeout);
-  
+
+//#ifdef debug
+//  mySerial.begin(1200);
+//#endif
+
   pinMode(servoFaultLed, OUTPUT);
   pinMode(servoReadyLed, OUTPUT);
   pinMode(joyFaultLed, OUTPUT);
   pinMode(rxDataLed, OUTPUT);
 
   doCalibrate = true;
-  Serial.print(out);
-#ifdef debug
-  Serial.print(",");
-  Serial.print(calMin);
-  Serial.print(",");
-  Serial.print(calMid);
-  Serial.print(",");
-  Serial.print(calMax);
-  Serial.print(",");
-  Serial.print(pot);
-  Serial.print(",");
-  Serial.print(fault);
-#endif
-  Serial.println();
+  lockCalibrate = true;
+  Serial.println(out);
 }
 
 int slopeTmp;
@@ -142,13 +179,13 @@ void loop() {
   if ((pot < calMin) || (pot > calMax)) {
     doCalibrate = true;
   } 
-  if (!doCalibrate) {
+  if (!lockCalibrate) {
     if ((pot < potLowFault) || (pot > potHiFault) || (fault > faultHi) || (fault < faultLow) ) {
       // Hardware fault
       out = joyFault;
     } else if (!driveButton.isPressed()) {
       // Drive button released
-      out = joyReady;
+      //out = joyReady;
     } else {
       // Joystick is ready to go
       // process data
@@ -164,41 +201,17 @@ void loop() {
           //out = map(pot, calMid + deadBand, calMax, outMax / 2, outMax );
           out = map(pot, calMid + deadBand, calMax, outMax / 2, outMax / 2 + slopeTmp - 1 );
         }
-  
-        // slope data from old
-        // out = map(pot, calMin, calMax, outMax / 2 - slopeTmp, outMax / 2 + slopeTmp);
       } else {
         //in deadBand. stop motion
         out = joyReady;
       }
     }
   }  
-/*
-  if (faultResetButton.isPressed()) {
-    out = resetFault;
-  }
-*/
-  Serial.print(out);
-#ifdef debug
-  Serial.print(",");
-  Serial.print(indata);
-  Serial.print(",");
-  Serial.print(calMin);
-  Serial.print(",");
-  Serial.print(calMid);
-  Serial.print(",");
-  Serial.print(calMax);
-  Serial.print(",");
-  Serial.print(pot);
-  Serial.print(",");
-  Serial.print(fault);
-  Serial.print(",");
-  Serial.print(deadBand);
-  Serial.print(",");
-  Serial.print(slope);
+  Serial.println(out);
+#ifdef debug  
+  Serial.println(countParseError);
+  //mySerial.println(countParseError);
 #endif
-  Serial.println();
-
   delay(10);
 
 }
